@@ -207,7 +207,7 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
     )
 
     white_ratio = np.sum(thresh == 255) / thresh.size
-    if white_ratio > 0.70:
+    if white_ratio > 0.5:
         _, thresh = cv2.threshold(
             blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
         )
@@ -218,25 +218,23 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
     # Morphology nhẹ để tránh sót
     kernel = np.ones((3, 3), np.uint8)
     opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
-    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel, iterations=1)
 
     if save_steps and output_folder:
-        save_step_image(output_folder, original_filename, 5, "opening", opening)
-        save_step_image(output_folder, original_filename, 6, "closing", closing)
+        save_step_image(output_folder, original_filename, 5, "morphologyEx", opening)
 
     # Sure BG
-    sure_bg = cv2.dilate(closing, kernel, iterations=2)
+    sure_bg = cv2.dilate(opening, kernel, iterations=2)
 
     if save_steps and output_folder:
-        save_step_image(output_folder, original_filename, 7, "sure_bg", sure_bg)
+        save_step_image(output_folder, original_filename, 6, "sure_bg", sure_bg)
 
     # Distance transform toàn ảnh
-    dist_transform = cv2.distanceTransform(closing, cv2.DIST_L2, 5)
+    dist_transform = cv2.distanceTransform(opening, cv2.DIST_L2, 5)
     dist_transform_norm = cv2.normalize(
         dist_transform, None, 0, 255, cv2.NORM_MINMAX
     ).astype(np.uint8)
 
-    # Threshold mềm để đỡ sót hạt
+    # Sure FG
     _, sure_fg = cv2.threshold(
         dist_transform, 0.28 * dist_transform.max(), 255, 0
     )
@@ -245,9 +243,9 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
     unknown = cv2.subtract(sure_bg, sure_fg)
 
     if save_steps and output_folder:
-        save_step_image(output_folder, original_filename, 8, "distance_transform", dist_transform_norm)
-        save_step_image(output_folder, original_filename, 9, "sure_fg", sure_fg)
-        save_step_image(output_folder, original_filename, 10, "unknown", unknown)
+        save_step_image(output_folder, original_filename, 7, "distance_transform", dist_transform_norm)
+        save_step_image(output_folder, original_filename, 8, "sure_fg", sure_fg)
+        save_step_image(output_folder, original_filename, 9, "unknown", unknown)
 
     # Marker
     num_markers, markers = cv2.connectedComponents(sure_fg)
@@ -258,7 +256,7 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
         markers_vis_before = cv2.normalize(
             markers.astype(np.float32), None, 0, 255, cv2.NORM_MINMAX
         ).astype(np.uint8)
-        save_step_image(output_folder, original_filename, 11, "markers_before_watershed", markers_vis_before)
+        save_step_image(output_folder, original_filename, 10, "markers_before_watershed", markers_vis_before)
 
     # Watershed toàn ảnh
     markers = cv2.watershed(original, markers)
@@ -268,7 +266,7 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
         markers_vis_after = cv2.normalize(
             markers_vis_after, None, 0, 255, cv2.NORM_MINMAX
         ).astype(np.uint8)
-        save_step_image(output_folder, original_filename, 12, "markers_after_watershed", markers_vis_after)
+        save_step_image(output_folder, original_filename, 11, "markers_after_watershed", markers_vis_after)
 
     output = original.copy()
     valid_mask = np.zeros(gray.shape, dtype=np.uint8)
@@ -282,7 +280,7 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
     min_area = 18
     max_area = 7000
 
-    # Lấy các contour như bản đang chạy tốt
+    # Lấy các contour
     for marker_id in unique_markers:
         if marker_id <= 1:
             continue
@@ -453,9 +451,9 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
     )
 
     if save_steps and output_folder:
-        save_step_image(output_folder, original_filename, 13, "valid_mask", valid_mask)
-        save_step_image(output_folder, original_filename, 14, "valid_overlay", valid_overlay)
-        save_step_image(output_folder, original_filename, 15, "final_output", output)
+        save_step_image(output_folder, original_filename, 12, "valid_mask", valid_mask)
+        save_step_image(output_folder, original_filename, 13, "valid_overlay", valid_overlay)
+        save_step_image(output_folder, original_filename, 14, "final_output", output)
 
     if show_steps:
         cv2.imshow("Original", original)
@@ -476,6 +474,26 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
 
     return rice_count, output
 
+def print_info(image_path):
+    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+
+    # Kích thước ảnh
+    height, width = img.shape[:2]
+
+    # Số kênh màu
+    if len(img.shape) == 2:
+        channels = 1
+    else:
+        channels = img.shape[2]
+
+    # Bit depth
+    bit_depth = img.dtype.itemsize * 8
+
+    print("Width:", width)
+    print("Height:", height)
+    print("Size:", f"{width}x{height}")
+    print("Channels:", channels)
+    print("Bit depth:", bit_depth)
 
 def process_folder(input_folder, output_folder="output", save_steps=True):
     os.makedirs(output_folder, exist_ok=True)
@@ -489,6 +507,7 @@ def process_folder(input_folder, output_folder="output", save_steps=True):
 
     for image_path in image_files:
         try:
+            print_info(image_path)
             count, output_img = count_rice_grains(
                 image_path,
                 output_folder=output_folder,
