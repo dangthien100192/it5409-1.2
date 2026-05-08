@@ -256,7 +256,7 @@ def count_rice_grains(image_path, output_folder=None, save_steps=False, show_ste
     if save_steps and output_folder:
         save_step_image(output_folder, original_filename, 2, "fourier", gray_fourier)
 
-    # Gtăng tương phản nhẹ
+    # Tăng tương phản nhẹ
     clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray_fourier)
 
